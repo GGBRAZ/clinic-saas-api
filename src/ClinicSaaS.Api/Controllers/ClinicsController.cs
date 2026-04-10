@@ -128,3 +128,4 @@ public class ClinicsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = clinic.Id }, response);
     }
 }
+                                                                                                                                                                                                                                                                                                                  
