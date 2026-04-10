@@ -1,0 +1,17 @@
+﻿version: "3.9"
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: clinic-saas-postgres
+    environment:
+      POSTGRES_DB: clinicsaasdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - clinicsaas_pgdata:/var/lib/postgresql/data
+
+volumes:
+  clinicsaas_pgdata:
