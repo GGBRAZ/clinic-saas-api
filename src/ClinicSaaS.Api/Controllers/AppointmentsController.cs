@@ -1,6 +1,7 @@
 using ClinicSaaS.Api.Services;
 using ClinicSaaS.Application.Appointments.Dtos;
 using ClinicSaaS.Domain.Entities;
+using ClinicSaaS.Domain.Enums;
 using ClinicSaaS.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -96,6 +97,48 @@ public class AppointmentsController : ControllerBase
         return Ok(appointment);
     }
 
+    [HttpGet("{id:guid}/history")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetHistory(Guid id)
+    {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
+        var appointmentExists = await _context.Appointments
+            .AnyAsync(x => x.Id == id && x.ClinicId == clinicId.Value);
+
+        if (!appointmentExists)
+            return NotFound(new { message = "Appointment not found." });
+
+        var history = await _context.AppointmentHistories
+            .AsNoTracking()
+            .Where(x => x.AppointmentId == id)
+            .OrderBy(x => x.CreatedAt)
+            .Select(x => new
+            {
+                x.Id,
+                x.AppointmentId,
+                x.Action,
+                x.OldStatus,
+                x.NewStatus,
+                x.OldDate,
+                x.NewDate,
+                x.OldStartTime,
+                x.NewStartTime,
+                x.OldEndTime,
+                x.NewEndTime,
+                x.Notes,
+                x.CreatedAt
+            })
+            .ToListAsync();
+
+        return Ok(history);
+    }
+
     [HttpPost]
     [ProducesResponseType(typeof(AppointmentResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -150,6 +193,23 @@ public class AppointmentsController : ControllerBase
         }
 
         _context.Appointments.Add(appointment);
+
+        var history = new AppointmentHistory(
+            appointment.Id,
+            AppointmentHistoryAction.Created,
+            oldStatus: null,
+            newStatus: appointment.Status,
+            oldDate: null,
+            newDate: appointment.Date,
+            oldStartTime: null,
+            newStartTime: appointment.StartTime,
+            oldEndTime: null,
+            newEndTime: appointment.EndTime,
+            notes: "Appointment created."
+        );
+
+        _context.AppointmentHistories.Add(history);
+
         await _context.SaveChangesAsync();
 
         var response = new AppointmentResponse
@@ -169,6 +229,60 @@ public class AppointmentsController : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = appointment.Id }, response);
     }
 
+    [HttpPatch("{id:guid}/reschedule")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Reschedule(Guid id, [FromBody] RescheduleAppointmentRequest request)
+    {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
+        if (request is null)
+            return BadRequest(new { message = "Request body is required." });
+
+        var appointment = await _context.Appointments
+            .FirstOrDefaultAsync(x => x.Id == id && x.ClinicId == clinicId.Value);
+
+        if (appointment is null)
+            return NotFound(new { message = "Appointment not found." });
+
+        var oldDate = appointment.Date;
+        var oldStartTime = appointment.StartTime;
+        var oldEndTime = appointment.EndTime;
+        var oldStatus = appointment.Status;
+
+        try
+        {
+            appointment.Reschedule(request.Date, request.StartTime, request.EndTime);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+
+        var history = new AppointmentHistory(
+            appointment.Id,
+            AppointmentHistoryAction.Rescheduled,
+            oldStatus: oldStatus,
+            newStatus: appointment.Status,
+            oldDate: oldDate,
+            newDate: appointment.Date,
+            oldStartTime: oldStartTime,
+            newStartTime: appointment.StartTime,
+            oldEndTime: oldEndTime,
+            newEndTime: appointment.EndTime,
+            notes: request.Notes
+        );
+
+        _context.AppointmentHistories.Add(history);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Appointment rescheduled successfully." });
+    }
+
     [HttpPatch("{id:guid}/complete")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -186,7 +300,25 @@ public class AppointmentsController : ControllerBase
         if (appointment is null)
             return NotFound(new { message = "Appointment not found." });
 
+        var oldStatus = appointment.Status;
+
         appointment.MarkAsCompleted();
+
+        var history = new AppointmentHistory(
+            appointment.Id,
+            AppointmentHistoryAction.Completed,
+            oldStatus: oldStatus,
+            newStatus: appointment.Status,
+            oldDate: appointment.Date,
+            newDate: appointment.Date,
+            oldStartTime: appointment.StartTime,
+            newStartTime: appointment.StartTime,
+            oldEndTime: appointment.EndTime,
+            newEndTime: appointment.EndTime,
+            notes: "Appointment marked as completed."
+        );
+
+        _context.AppointmentHistories.Add(history);
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Appointment marked as completed." });
@@ -209,7 +341,25 @@ public class AppointmentsController : ControllerBase
         if (appointment is null)
             return NotFound(new { message = "Appointment not found." });
 
+        var oldStatus = appointment.Status;
+
         appointment.MarkAsNoShow();
+
+        var history = new AppointmentHistory(
+            appointment.Id,
+            AppointmentHistoryAction.NoShow,
+            oldStatus: oldStatus,
+            newStatus: appointment.Status,
+            oldDate: appointment.Date,
+            newDate: appointment.Date,
+            oldStartTime: appointment.StartTime,
+            newStartTime: appointment.StartTime,
+            oldEndTime: appointment.EndTime,
+            newEndTime: appointment.EndTime,
+            notes: "Appointment marked as no-show."
+        );
+
+        _context.AppointmentHistories.Add(history);
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Appointment marked as no-show." });
@@ -232,7 +382,25 @@ public class AppointmentsController : ControllerBase
         if (appointment is null)
             return NotFound(new { message = "Appointment not found." });
 
+        var oldStatus = appointment.Status;
+
         appointment.MarkAsCanceled();
+
+        var history = new AppointmentHistory(
+            appointment.Id,
+            AppointmentHistoryAction.Canceled,
+            oldStatus: oldStatus,
+            newStatus: appointment.Status,
+            oldDate: appointment.Date,
+            newDate: appointment.Date,
+            oldStartTime: appointment.StartTime,
+            newStartTime: appointment.StartTime,
+            oldEndTime: appointment.EndTime,
+            newEndTime: appointment.EndTime,
+            notes: "Appointment marked as canceled."
+        );
+
+        _context.AppointmentHistories.Add(history);
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "Appointment marked as canceled." });

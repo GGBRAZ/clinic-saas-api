@@ -13,6 +13,7 @@ public class ClinicSaaSDbContext : DbContext
     public DbSet<Clinic> Clinics => Set<Clinic>();
     public DbSet<Patient> Patients => Set<Patient>();
     public DbSet<Appointment> Appointments => Set<Appointment>();
+    public DbSet<AppointmentHistory> AppointmentHistories => Set<AppointmentHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -123,6 +124,48 @@ public class ClinicSaaSDbContext : DbContext
             entity.HasIndex(x => x.ClinicId);
             entity.HasIndex(x => x.PatientId);
             entity.HasIndex(x => new { x.ClinicId, x.Date });
+        });
+
+        modelBuilder.Entity<AppointmentHistory>(entity =>
+        {
+            entity.ToTable("AppointmentHistories");
+
+            entity.HasKey(x => x.Id);
+
+            entity.Property(x => x.Action)
+                .IsRequired();
+
+            entity.Property(x => x.OldStatus);
+
+            entity.Property(x => x.NewStatus);
+
+            entity.Property(x => x.OldDate)
+                .HasColumnType("date");
+
+            entity.Property(x => x.NewDate)
+                .HasColumnType("date");
+
+            entity.Property(x => x.OldStartTime);
+
+            entity.Property(x => x.NewStartTime);
+
+            entity.Property(x => x.OldEndTime);
+
+            entity.Property(x => x.NewEndTime);
+
+            entity.Property(x => x.Notes)
+                .HasMaxLength(1000);
+
+            entity.Property(x => x.CreatedAt)
+                .IsRequired();
+
+            entity.HasOne(x => x.Appointment)
+                .WithMany()
+                .HasForeignKey(x => x.AppointmentId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(x => x.AppointmentId);
+            entity.HasIndex(x => x.CreatedAt);
         });
     }
 }

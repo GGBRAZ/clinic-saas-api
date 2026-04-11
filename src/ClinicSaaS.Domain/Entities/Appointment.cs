@@ -71,6 +71,15 @@ public class Appointment
         EndTime = end;
     }
 
+    public void Reschedule(DateTime newDate, TimeSpan newStartTime, TimeSpan newEndTime)
+    {
+        if (newEndTime <= newStartTime)
+            throw new ArgumentException("End time must be greater than start time.");
+
+        Date = newDate.Date;
+        StartTime = newStartTime;
+        EndTime = newEndTime;
+    }
     public void SetExpectedAmount(decimal amount)
     {
         if (amount < 0)
