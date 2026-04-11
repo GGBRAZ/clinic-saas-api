@@ -9,6 +9,8 @@ public class Clinic
     public string Phone { get; private set; } = string.Empty;
     public DateTime CreatedAt { get; private set; } = DateTime.UtcNow;
 
+    public ICollection<Patient> Patients { get; private set; } = new List<Patient>();
+
     private Clinic() { }
 
     public Clinic(string name, string slug, string email, string phone)
