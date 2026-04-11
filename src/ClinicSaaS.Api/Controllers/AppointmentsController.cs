@@ -1,3 +1,4 @@
+using ClinicSaaS.Api.Services;
 using ClinicSaaS.Application.Appointments.Dtos;
 using ClinicSaaS.Domain.Entities;
 using ClinicSaaS.Infrastructure.Persistence;
@@ -11,22 +12,30 @@ namespace ClinicSaaS.Api.Controllers;
 public class AppointmentsController : ControllerBase
 {
     private readonly ClinicSaaSDbContext _context;
+    private readonly CurrentClinicService _currentClinicService;
 
-    public AppointmentsController(ClinicSaaSDbContext context)
+    public AppointmentsController(
+        ClinicSaaSDbContext context,
+        CurrentClinicService currentClinicService)
     {
         _context = context;
+        _currentClinicService = currentClinicService;
     }
 
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<AppointmentResponse>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? clinicId = null, [FromQuery] Guid? patientId = null)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetAll([FromQuery] Guid? patientId = null)
     {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
         var query = _context.Appointments
             .AsNoTracking()
+            .Where(x => x.ClinicId == clinicId.Value)
             .AsQueryable();
-
-        if (clinicId.HasValue && clinicId.Value != Guid.Empty)
-            query = query.Where(x => x.ClinicId == clinicId.Value);
 
         if (patientId.HasValue && patientId.Value != Guid.Empty)
             query = query.Where(x => x.PatientId == patientId.Value);
@@ -54,12 +63,18 @@ public class AppointmentsController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(AppointmentResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(Guid id)
     {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
         var appointment = await _context.Appointments
             .AsNoTracking()
-            .Where(x => x.Id == id)
+            .Where(x => x.Id == id && x.ClinicId == clinicId.Value)
             .Select(x => new AppointmentResponse
             {
                 Id = x.Id,
@@ -87,27 +102,30 @@ public class AppointmentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create([FromBody] CreateAppointmentRequest request)
     {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
         if (request is null)
             return BadRequest(new { message = "Request body is required." });
 
-        if (request.ClinicId == Guid.Empty ||
-            request.PatientId == Guid.Empty ||
-            request.ExpectedAmount < 0)
+        if (request.PatientId == Guid.Empty || request.ExpectedAmount < 0)
         {
             return BadRequest(new
             {
-                message = "ClinicId, PatientId, and a valid ExpectedAmount are required."
+                message = "PatientId and a valid ExpectedAmount are required."
             });
         }
 
         var clinicExists = await _context.Clinics
-            .AnyAsync(x => x.Id == request.ClinicId);
+            .AnyAsync(x => x.Id == clinicId.Value);
 
         if (!clinicExists)
             return NotFound(new { message = "Clinic not found." });
 
         var patientExists = await _context.Patients
-            .AnyAsync(x => x.Id == request.PatientId && x.ClinicId == request.ClinicId);
+            .AnyAsync(x => x.Id == request.PatientId && x.ClinicId == clinicId.Value);
 
         if (!patientExists)
             return NotFound(new { message = "Patient not found for this clinic." });
@@ -117,7 +135,7 @@ public class AppointmentsController : ControllerBase
         try
         {
             appointment = new Appointment(
-                request.ClinicId,
+                clinicId.Value,
                 request.PatientId,
                 request.Date,
                 request.StartTime,
@@ -153,10 +171,17 @@ public class AppointmentsController : ControllerBase
 
     [HttpPatch("{id:guid}/complete")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> MarkAsCompleted(Guid id)
     {
-        var appointment = await _context.Appointments.FirstOrDefaultAsync(x => x.Id == id);
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
+        var appointment = await _context.Appointments
+            .FirstOrDefaultAsync(x => x.Id == id && x.ClinicId == clinicId.Value);
 
         if (appointment is null)
             return NotFound(new { message = "Appointment not found." });
@@ -169,10 +194,17 @@ public class AppointmentsController : ControllerBase
 
     [HttpPatch("{id:guid}/noshow")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> MarkAsNoShow(Guid id)
     {
-        var appointment = await _context.Appointments.FirstOrDefaultAsync(x => x.Id == id);
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
+        var appointment = await _context.Appointments
+            .FirstOrDefaultAsync(x => x.Id == id && x.ClinicId == clinicId.Value);
 
         if (appointment is null)
             return NotFound(new { message = "Appointment not found." });
@@ -185,10 +217,17 @@ public class AppointmentsController : ControllerBase
 
     [HttpPatch("{id:guid}/cancel")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> MarkAsCanceled(Guid id)
     {
-        var appointment = await _context.Appointments.FirstOrDefaultAsync(x => x.Id == id);
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
+        var appointment = await _context.Appointments
+            .FirstOrDefaultAsync(x => x.Id == id && x.ClinicId == clinicId.Value);
 
         if (appointment is null)
             return NotFound(new { message = "Appointment not found." });

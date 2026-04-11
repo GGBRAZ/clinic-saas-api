@@ -1,3 +1,4 @@
+using ClinicSaaS.Api.Services;
 using ClinicSaaS.Application.Patients.Dtos;
 using ClinicSaaS.Domain.Entities;
 using ClinicSaaS.Infrastructure.Persistence;
@@ -11,22 +12,29 @@ namespace ClinicSaaS.Api.Controllers;
 public class PatientsController : ControllerBase
 {
     private readonly ClinicSaaSDbContext _context;
+    private readonly CurrentClinicService _currentClinicService;
 
-    public PatientsController(ClinicSaaSDbContext context)
+    public PatientsController(
+        ClinicSaaSDbContext context,
+        CurrentClinicService currentClinicService)
     {
         _context = context;
+        _currentClinicService = currentClinicService;
     }
 
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<PatientResponse>), StatusCodes.Status200OK)]
-    public async Task<IActionResult> GetAll([FromQuery] Guid? clinicId = null)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> GetAll()
     {
-        var query = _context.Patients.AsNoTracking().AsQueryable();
+        var clinicId = _currentClinicService.GetClinicId();
 
-        if (clinicId.HasValue && clinicId.Value != Guid.Empty)
-            query = query.Where(x => x.ClinicId == clinicId.Value);
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
 
-        var patients = await query
+        var patients = await _context.Patients
+            .AsNoTracking()
+            .Where(x => x.ClinicId == clinicId.Value)
             .OrderBy(x => x.FullName)
             .Select(x => new PatientResponse
             {
@@ -46,12 +54,18 @@ public class PatientsController : ControllerBase
 
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(PatientResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetById(Guid id)
     {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
         var patient = await _context.Patients
             .AsNoTracking()
-            .Where(x => x.Id == id)
+            .Where(x => x.Id == id && x.ClinicId == clinicId.Value)
             .Select(x => new PatientResponse
             {
                 Id = x.Id,
@@ -77,20 +91,25 @@ public class PatientsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Create([FromBody] CreatePatientRequest request)
     {
+        var clinicId = _currentClinicService.GetClinicId();
+
+        if (clinicId is null || clinicId == Guid.Empty)
+            return BadRequest(new { message = "X-Clinic-Id header is required." });
+
         if (request is null)
             return BadRequest(new { message = "Request body is required." });
 
-        if (request.ClinicId == Guid.Empty ||
-            string.IsNullOrWhiteSpace(request.FullName) ||
+        if (string.IsNullOrWhiteSpace(request.FullName) ||
             string.IsNullOrWhiteSpace(request.Phone))
         {
             return BadRequest(new
             {
-                message = "ClinicId, fullName, and phone are required."
+                message = "fullName and phone are required."
             });
         }
 
-        var clinicExists = await _context.Clinics.AnyAsync(x => x.Id == request.ClinicId);
+        var clinicExists = await _context.Clinics
+            .AnyAsync(x => x.Id == clinicId.Value);
 
         if (!clinicExists)
             return NotFound(new { message = "Clinic not found." });
@@ -100,7 +119,7 @@ public class PatientsController : ControllerBase
         try
         {
             patient = new Patient(
-                request.ClinicId,
+                clinicId.Value,
                 request.FullName,
                 request.Phone,
                 request.Email,
