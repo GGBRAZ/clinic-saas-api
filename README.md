@@ -1,6 +1,6 @@
 # 🏥 Clinic SaaS API
 
-Production-ready backend API for clinic scheduling, patient management, attendance tracking, and SaaS-oriented clinic operations.
+Production-ready backend API for clinic scheduling, patient management, attendance tracking, financial visibility, and SaaS-oriented clinic operations.
 
 ---
 
@@ -8,7 +8,7 @@ Production-ready backend API for clinic scheduling, patient management, attendan
 
 Clinic SaaS API is a modern backend system built with .NET and PostgreSQL, designed to support clinics, physiotherapy studios, and pilates businesses.
 
-The project focuses on delivering a scalable, maintainable, and production-oriented architecture aligned with real-world SaaS applications. It models the operational flow of a clinic, from patient registration to appointment management and financial visibility.
+The project focuses on delivering a scalable, maintainable, and production-oriented architecture aligned with real-world SaaS applications. It models the operational flow of a clinic, from patient registration to appointment management, attendance tracking, and financial analytics.
 
 ---
 
@@ -20,7 +20,7 @@ This project demonstrates:
 - Clean Architecture and separation of concerns
 - Domain-driven design fundamentals
 - SaaS-ready backend structure
-- Multi-tenant request isolation
+- Multi-tenant clinic context resolution through JWT claims
 - Production-grade API design
 - Business-oriented metrics such as lost revenue and no-show rate
 
@@ -34,8 +34,9 @@ This project demonstrates:
 | ORM | Entity Framework Core |
 | Database | PostgreSQL |
 | Containerization | Docker |
-| API Documentation | Swagger / OpenAPI |
-| Logging | Serilog (planned) |
+| API Documentation | OpenAPI + NSwag UI |
+| Authentication | JWT Bearer |
+| Logging | Serilog |
 | Validation | FluentValidation (planned) |
 
 ---
@@ -46,7 +47,7 @@ The project follows a modular layered architecture:
 
 ```text
 src/
-  ClinicSaaS.Api            → HTTP layer (Controllers, Middleware, Swagger)
+  ClinicSaaS.Api            → HTTP layer (Controllers, Auth, API documentation)
   ClinicSaaS.Application    → DTOs and application contracts
   ClinicSaaS.Domain         → Core entities, enums, and business rules
   ClinicSaaS.Infrastructure → Persistence, EF Core, DbContext
@@ -76,8 +77,8 @@ tests/
 #### API
 - Controllers
 - Request/response orchestration
-- Swagger
-- Multi-tenant request handling
+- JWT authentication
+- OpenAPI / NSwag documentation
 
 ---
 
@@ -94,24 +95,23 @@ tests/
 - Create appointment
 - List appointments by clinic context
 - Get appointment by ID
+- Reschedule appointment
+- Track appointment history
 - Mark appointment as completed
 - Mark appointment as no-show
 - Mark appointment as canceled
 - Financial dashboard
 - Financial dashboard by period
 - No-show rate calculation
-- Multi-tenant request isolation via header
+- Clinic context resolved from JWT claim
 - PostgreSQL integration via EF Core
 - Initial migrations
-- Swagger documentation
+- OpenAPI documentation with NSwag UI
 
 ### 🚧 Planned
 
-- Reschedule rules
-- Attendance history
-- JWT authentication
-- Role-based authorization
-- Audit trail
+- Role-based authorization refinement
+- Audit trail improvements
 - Front-end dashboard
 - SaaS billing model
 
@@ -158,6 +158,24 @@ Notes
 CreatedAt
 ```
 
+### Appointment History
+
+```text
+Id
+AppointmentId
+Action
+OldStatus
+NewStatus
+OldDate
+NewDate
+OldStartTime
+NewStartTime
+OldEndTime
+NewEndTime
+Notes
+CreatedAt
+```
+
 ### Appointment Status
 
 ```text
@@ -169,31 +187,27 @@ NoShow
 
 ---
 
-## 🧠 Multi-Tenant Design
+## 🧠 Authentication and Clinic Context
 
-The API uses a basic multi-tenant strategy based on the request header:
+The API uses JWT Bearer authentication.
 
-```http
-X-Clinic-Id: <clinic-guid>
+The authenticated token carries the clinic context through the `clinic_id` claim, which is resolved by the API at request time. This replaces the earlier manual tenant header approach and keeps authentication and tenant context aligned in a single token.
+
+### Current JWT Claims
+
+```text
+sub
+email
+role
+clinic_id
 ```
 
-This means:
+### Benefits
 
-- the active clinic is resolved from the request context
-- patient and appointment operations are isolated by clinic
-- dashboard metrics are calculated for the active clinic
-- tenant context no longer needs to be sent in request bodies for patient and appointment creation
-
-### Endpoints that require `X-Clinic-Id`
-
-- `/api/Patients`
-- `/api/Appointments`
-- `/api/dashboard/financial`
-- `/api/dashboard/financial-by-period`
-
-### Endpoints that do not require `X-Clinic-Id`
-
-- `/api/Clinics`
+- No manual clinic header required
+- Reduced risk of token/header mismatch
+- Cleaner multi-tenant request flow
+- Better production alignment for SaaS APIs
 
 ---
 
@@ -253,17 +267,53 @@ volumes:
 
 ## 📄 API Documentation
 
-After running the API, access Swagger at:
+The API exposes an OpenAPI document with an interactive UI powered by NSwag.
+
+### Development URL
 
 ```text
-https://localhost:xxxx/swagger
+http://localhost:5029/swagger
 ```
 
-Swagger is configured to support the `X-Clinic-Id` header on multi-tenant endpoints.
+### Authentication in the API UI
+
+Use the authentication endpoint to obtain a JWT token:
+
+```http
+POST /api/Auth/login
+```
+
+Then authorize requests in the API UI using the returned access token.
 
 ---
 
 ## 🔌 Example Endpoints
+
+### Login
+
+```http
+POST /api/Auth/login
+```
+
+#### Request
+
+```json
+{
+  "email": "admin@clinic.com",
+  "password": "123456"
+}
+```
+
+#### Response
+
+```json
+{
+  "accessToken": "jwt-token-here",
+  "expiresAtUtc": "2026-04-15T01:00:00Z"
+}
+```
+
+---
 
 ### Create Clinic
 
@@ -282,38 +332,30 @@ POST /api/Clinics
 }
 ```
 
+---
+
+### Get Patients
+
+```http
+GET /api/Patients
+Authorization: Bearer <jwt-token>
+```
+
 #### Response
 
 ```json
-{
-  "id": "guid",
-  "name": "Studio Equilibrio Vital",
-  "slug": "studio-equilibrio-vital",
-  "email": "contato@equilibriovital.com",
-  "phone": "+55 21 99999-9999",
-  "createdAt": "2026-01-01T00:00:00Z"
-}
-```
-
----
-
-### Create Patient
-
-```http
-POST /api/Patients
-X-Clinic-Id: <clinic-guid>
-```
-
-#### Request
-
-```json
-{
-  "fullName": "Mariana Costa",
-  "phone": "+55 21 98888-1111",
-  "email": "mariana.costa@email.com",
-  "birthDate": "1992-08-15T00:00:00Z",
-  "notes": "Pilates twice a week"
-}
+[
+  {
+    "id": "guid",
+    "clinicId": "guid",
+    "fullName": "Mariana Costa",
+    "phone": "+55 21 98888-1111",
+    "email": "mariana.costa@email.com",
+    "birthDate": "1992-08-15T00:00:00",
+    "notes": "Pilates twice a week",
+    "createdAt": "2026-04-11T02:55:14Z"
+  }
+]
 ```
 
 ---
@@ -322,7 +364,7 @@ X-Clinic-Id: <clinic-guid>
 
 ```http
 POST /api/Appointments
-X-Clinic-Id: <clinic-guid>
+Authorization: Bearer <jwt-token>
 ```
 
 #### Request
@@ -340,11 +382,31 @@ X-Clinic-Id: <clinic-guid>
 
 ---
 
-### Mark Appointment as NoShow
+### Reschedule Appointment
 
 ```http
-PATCH /api/Appointments/{id}/noshow
-X-Clinic-Id: <clinic-guid>
+PATCH /api/Appointments/{id}/reschedule
+Authorization: Bearer <jwt-token>
+```
+
+#### Request
+
+```json
+{
+  "date": "2026-04-21T00:00:00Z",
+  "startTime": "14:00:00",
+  "endTime": "15:00:00",
+  "notes": "Patient requested a new time"
+}
+```
+
+---
+
+### Appointment History
+
+```http
+GET /api/Appointments/{id}/history
+Authorization: Bearer <jwt-token>
 ```
 
 ---
@@ -353,7 +415,7 @@ X-Clinic-Id: <clinic-guid>
 
 ```http
 GET /api/dashboard/financial
-X-Clinic-Id: <clinic-guid>
+Authorization: Bearer <jwt-token>
 ```
 
 #### Response
@@ -364,33 +426,6 @@ X-Clinic-Id: <clinic-guid>
   "lostRevenue": 180.00,
   "noShowCount": 1,
   "completedCount": 1
-}
-```
-
----
-
-### Financial Dashboard by Period
-
-```http
-GET /api/dashboard/financial-by-period?startDate=2026-04-12&endDate=2026-04-13
-X-Clinic-Id: <clinic-guid>
-```
-
-#### Response
-
-```json
-{
-  "clinicId": "guid",
-  "startDate": "2026-04-12T00:00:00",
-  "endDate": "2026-04-13T00:00:00",
-  "totalAppointments": 4,
-  "completedCount": 1,
-  "noShowCount": 1,
-  "canceledCount": 1,
-  "scheduledCount": 1,
-  "totalRevenue": 150.00,
-  "lostRevenue": 180.00,
-  "noShowRate": 25.00
 }
 ```
 
@@ -408,6 +443,8 @@ The project already supports business-oriented indicators such as:
 - Lost revenue
 - No-show rate
 - Period-based financial analysis
+- Appointment lifecycle tracking
+- Rescheduling audit trail
 
 These metrics make the project more aligned with real SaaS products rather than tutorial-style CRUD applications.
 
@@ -417,14 +454,16 @@ These metrics make the project more aligned with real SaaS products rather than 
 
 A practical end-to-end validation flow:
 
-1. Create a clinic
-2. Create patients using `X-Clinic-Id`
-3. Create appointments using `X-Clinic-Id`
-4. Mark one appointment as completed
-5. Mark one appointment as no-show
-6. Mark one appointment as canceled
-7. Query the financial dashboard
-8. Query the period-based dashboard
+1. Authenticate and obtain a JWT token
+2. Create a clinic
+3. Create patients
+4. Create appointments
+5. Reschedule an appointment
+6. Mark one appointment as completed
+7. Mark one appointment as no-show
+8. Mark one appointment as canceled
+9. Query appointment history
+10. Query the financial dashboard
 
 This flow validates both technical correctness and business behavior.
 
@@ -434,24 +473,24 @@ This flow validates both technical correctness and business behavior.
 
 ### Short Term
 
-- Reschedule endpoint
-- Attendance history
-- Audit trail for appointment state changes
+- Authorization refinement
 - Better validation rules
+- Audit trail improvements
+- Stronger production hardening
 
 ### Mid Term
-
-- JWT authentication
-- Role-based authorization
-- Tenant-aware user model
-- Global error handling middleware
-
-### Long Term
 
 - Operational dashboard UI
 - Revenue trend analysis
 - No-show forecasting
+- Tenant-aware user model
+
+### Long Term
+
 - SaaS billing and subscription model
+- Advanced reporting
+- Notification workflows
+- Scheduling intelligence
 
 ---
 
@@ -470,14 +509,15 @@ This flow validates both technical correctness and business behavior.
 
 ## 🔐 Security
 
-Current and planned security considerations:
+The API uses JWT Bearer authentication with:
 
-- Tenant context isolated via request header
-- DTO-based input boundaries
-- Request validation
-- Planned JWT authentication
-- Planned role-based access control
-- Planned secure configuration handling
+- issuer validation
+- audience validation
+- token lifetime validation
+- signing key validation
+- clinic context resolved from the `clinic_id` claim
+
+This avoids manual tenant headers and keeps authentication and clinic scope consistent in the same token.
 
 ---
 
@@ -489,9 +529,10 @@ It represents a real-world backend system designed with:
 
 - scalable architecture
 - business-oriented modeling
-- multi-tenant readiness
+- JWT-based clinic context
 - production-ready patterns
 - operational and financial insights
+- appointment lifecycle tracking
 
 It demonstrates the mindset required to build SaaS products, not just APIs.
 

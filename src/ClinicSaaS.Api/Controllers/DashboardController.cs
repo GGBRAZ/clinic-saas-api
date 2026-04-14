@@ -1,9 +1,11 @@
 using ClinicSaaS.Application.Dashboard.Dtos;
 using ClinicSaaS.Api.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace ClinicSaaS.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/dashboard")]
 public class DashboardController : ControllerBase

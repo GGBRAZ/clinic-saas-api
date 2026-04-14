@@ -4,9 +4,11 @@ using ClinicSaaS.Domain.Entities;
 using ClinicSaaS.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace ClinicSaaS.Api.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class PatientsController : ControllerBase
@@ -30,7 +32,7 @@ public class PatientsController : ControllerBase
         var clinicId = _currentClinicService.GetClinicId();
 
         if (clinicId is null || clinicId == Guid.Empty)
-            return BadRequest(new { message = "X-Clinic-Id header is required." });
+            return Unauthorized(new { message = "Clinic context was not found in the authenticated token." });
 
         var patients = await _context.Patients
             .AsNoTracking()

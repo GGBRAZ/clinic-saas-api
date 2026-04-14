@@ -1,11 +1,9 @@
-using Microsoft.AspNetCore.Http;
-
+using System.Security.Claims;
 
 namespace ClinicSaaS.Api.Services;
 
 public class CurrentClinicService
 {
-    private const string HeaderName = "X-Clinic-Id";
     private readonly IHttpContextAccessor _httpContextAccessor;
 
     public CurrentClinicService(IHttpContextAccessor httpContextAccessor)
@@ -15,22 +13,50 @@ public class CurrentClinicService
 
     public Guid? GetClinicId()
     {
-        var httpContext = _httpContextAccessor.HttpContext;
+        var user = _httpContextAccessor.HttpContext?.User;
 
-        if (httpContext is null)
+        if (user?.Identity?.IsAuthenticated != true)
             return null;
 
-        if (!httpContext.Request.Headers.TryGetValue(HeaderName, out var values))
+        var clinicIdValue = user.FindFirst("clinic_id")?.Value;
+
+        if (string.IsNullOrWhiteSpace(clinicIdValue))
             return null;
 
-        var rawValue = values.FirstOrDefault();
+        return Guid.TryParse(clinicIdValue, out var clinicId)
+            ? clinicId
+            : null;
+    }
 
-        if (string.IsNullOrWhiteSpace(rawValue))
+    public string? GetUserId()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+
+        if (user?.Identity?.IsAuthenticated != true)
             return null;
 
-        if (!Guid.TryParse(rawValue, out var clinicId))
+        return user.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? user.FindFirst("sub")?.Value;
+    }
+
+    public string? GetEmail()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+
+        if (user?.Identity?.IsAuthenticated != true)
             return null;
 
-        return clinicId;
+        return user.FindFirst(ClaimTypes.Email)?.Value
+            ?? user.FindFirst("email")?.Value;
+    }
+
+    public string? GetRole()
+    {
+        var user = _httpContextAccessor.HttpContext?.User;
+
+        if (user?.Identity?.IsAuthenticated != true)
+            return null;
+
+        return user.FindFirst(ClaimTypes.Role)?.Value;
     }
 }
